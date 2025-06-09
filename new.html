@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Solar System</title>
+  <style>
+    /* General Styling */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      background: radial-gradient(ellipse at center, #0a0a0a 0%, #000 100%);
+      overflow: hidden;
+      font-family: 'Segoe UI', sans-serif;
+      color: white;
+    }
+    canvas {
+      display: block;
+    }
+    .controls {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 15px;
+      border-radius: 12px;
+      backdrop-filter: blur(6px);
+      box-shadow: 0 0 15px rgba(255, 255, 255, 0.1);
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .controls h2 {
+      font-size: 18px;
+      margin-bottom: 10px;
+    }
+    .slider-group {
+      margin-bottom: 14px;
+    }
+    .slider-group label {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+    .slider-group input[type="range"] {
+      width: 160px;
+    }
+  </style>
+</head>
+<body>
+  <div class="controls" id="controls">
+    <h2>Planet Speed Controls</h2>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js"></script>
+  <script>
+    // Create the scene and camera
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 2000);
+    camera.position.set(0, 0, 160); // Set camera position so the Sun is centered
+    camera.lookAt(0, 0, 0); // Ensure camera points at the center
+
+    // Renderer setup
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Ambient and Point Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); // General light
+    scene.add(ambientLight);
+
+    const pointLight = new THREE.PointLight(0xffffff, 2.5, 1000); // Sun light source
+    pointLight.position.set(0, 0, 0);
+    scene.add(pointLight);
+
+    // Sun as a glowing sphere at the center
+    const sunGeometry = new THREE.SphereGeometry(12, 64, 64);
+    const sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffd700 });
+    const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+    scene.add(sun);
+
+    // Create a background of stars using random points
+    const starsGeometry = new THREE.BufferGeometry();
+    const starVertices = [];
+    for (let i = 0; i < 3000; i++) {
+      starVertices.push(
+        THREE.MathUtils.randFloatSpread(2000),
+        THREE.MathUtils.randFloatSpread(2000),
+        THREE.MathUtils.randFloatSpread(2000)
+      );
+    }
+    starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+    const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff });
+    const starField = new THREE.Points(starsGeometry, starsMaterial);
+    scene.add(starField);
+
+    // Define planet data: name, size, orbit distance, color, and speed
+    const planetsData = [
+      { name: 'Mercury', size: 1, distance: 18, color: 0xaaaaaa, speed: 0.04 },
+      { name: 'Venus', size: 1.5, distance: 24, color: 0xffcc99, speed: 0.03 },
+      { name: 'Earth', size: 1.8, distance: 30, color: 0x3399ff, speed: 0.025 },
+      { name: 'Mars', size: 1.4, distance: 36, color: 0xff3300, speed: 0.02 },
+      { name: 'Jupiter', size: 3.5, distance: 46, color: 0xffaa33, speed: 0.015 },
+      { name: 'Saturn', size: 3, distance: 56, color: 0xffdd99, speed: 0.012 },
+      { name: 'Uranus', size: 2.5, distance: 66, color: 0x66ffff, speed: 0.009 },
+      { name: 'Neptune', size: 2.3, distance: 76, color: 0x3366ff, speed: 0.007 }
+    ];
+
+    const planets = []; // Store planet objects with positions and angles
+    const speeds = {};  // Store current speed values per planet
+    const controlsContainer = document.getElementById('controls');
+
+    // Create each planet mesh, add to scene and controls UI
+    planetsData.forEach((data) => {
+      const geometry = new THREE.SphereGeometry(data.size, 32, 32);
+      const material = new THREE.MeshStandardMaterial({ color: data.color });
+      const planet = new THREE.Mesh(geometry, material);
+      scene.add(planet);
+
+      planets.push({ mesh: planet, angle: Math.random() * Math.PI * 2, distance: data.distance });
+      speeds[data.name] = data.speed;
+
+      // Create speed control sliders in UI
+      const group = document.createElement('div');
+      group.className = 'slider-group';
+      group.innerHTML = `
+        <label>${data.name} Speed: <span id="${data.name}-value">${data.speed.toFixed(3)}</span></label>
+        <input type="range" min="0.001" max="0.1" step="0.001" value="${data.speed}" 
+               onchange="updateSpeed('${data.name}', this.value)" />
+      `;
+      controlsContainer.appendChild(group);
+    });
+
+    // Update speed in real-time when slider changes
+    window.updateSpeed = function(name, value) {
+      speeds[name] = parseFloat(value);
+      document.getElementById(`${name}-value`).textContent = parseFloat(value).toFixed(3);
+    };
+
+    // Animation loop: move planets around the sun
+    function animate() {
+      requestAnimationFrame(animate);
+
+      planets.forEach((planetObj, i) => {
+        const data = planetsData[i];
+        planetObj.angle += speeds[data.name]; // update angle by speed
+
+        // Calculate new position using circular orbit (x, z plane)
+        const x = Math.cos(planetObj.angle) * planetObj.distance;
+        const z = Math.sin(planetObj.angle) * planetObj.distance;
+
+        planetObj.mesh.position.set(x, 0, z);
+        planetObj.mesh.rotation.y += 0.01; // slight self-rotation
+      });
+
+      renderer.render(scene, camera); // render the scene
+    }
+
+    animate(); // start animation
+
+    // Adjust renderer and camera when window resizes
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
